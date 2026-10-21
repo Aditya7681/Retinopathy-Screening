@@ -1,0 +1,438 @@
+DIABETIC RETINOPATHY CLASSIFICATION
+COMPARISON OF FOUR TRAINING APPROACHES
+
+
+Dataset: APTOS Diabetic Retinopathy
+Model: ResNet-18
+Classes: 0 No DR | 1 Mild | 2 Moderate | 3 Severe | 4 PDR
+
+Dataset split:
+  Training   = 2563
+  Validation = 549
+  Test       = 550
+
+Shared training setup:
+  Batch size = 16
+  Adam learning rate = 0.0001
+  Epochs = 10
+  WeightedRandomSampler
+  Device = CPU
+
+
+1. EXECUTIVE SUMMARY
+
+Four approaches were tested:
+
+  1. Baseline Cross-Entropy
+  2. Focal Loss
+  3. Weighted Cross-Entropy
+  4. Ordinal Classification
+
+Overall test results:
+
+Model                         Accuracy   Precision   Recall    F1
+------------------------------------------------------------------
+Baseline Cross-Entropy        81.45%     0.8155      0.8145   0.8142
+Focal Loss                    79.27%     0.7878      0.7927   0.7900
+Weighted Cross-Entropy        82.00%     0.8137      0.8200   0.8155
+Ordinal Classification       66.55%     0.7146      0.6655   0.6664
+
+Weighted Cross-Entropy has the highest test accuracy and weighted F1.
+However, its PDR recall is lower than the baseline.
+
+The baseline has the highest PDR recall among the four models.
+Weighted Cross-Entropy has the highest Severe recall.
+
+The simple ordinal approach performs substantially worse overall,
+especially for PDR.
+
+IMPORTANT: These are academic ML results, not evidence of clinical
+diagnostic suitability.
+
+
+2. TEST ACCURACY
+
+Baseline CE       81.45% | ########################################
+Focal Loss        79.27% | #######################################
+Weighted CE       82.00% | #########################################
+Ordinal           66.55% | #################################
+
+Approximate scale: 1 # = 2 percentage points.
+
+Interpretation:
+The first three models are relatively close in overall accuracy.
+Ordinal classification is substantially lower.
+
+
+3. BEST VALIDATION ACCURACY
+
+Baseline CE       80.51% | ########################################
+Focal Loss        81.79% | #########################################
+Weighted CE       80.51% | ########################################
+Ordinal           64.48% | ################################
+
+Focal Loss had the highest validation accuracy, but this did not
+translate into the highest test accuracy. Its test accuracy was
+79.27%.
+
+This is why both validation and test results must be considered.
+
+
+4. CLASS-WISE RECALL
+
+Model                    No DR    Mild    Moderate   Severe   PDR
+--------------------------------------------------------------------
+Baseline CE              98%      61%       75%       45%     55%
+Focal Loss               98%      48%       73%       41%     48%
+Weighted CE              97%      55%       81%       55%     41%
+Ordinal                  87%      61%       55%       38%      2%
+
+
+SEVERE RECALL
+Baseline CE       45% | ######################
+Focal Loss        41% | ####################
+Weighted CE       55% | ###########################
+Ordinal           38% | ###################
+
+PDR RECALL
+Baseline CE       55% | ############################
+Focal Loss        48% | ########################
+Weighted CE       41% | #####################
+Ordinal            2% | #
+
+MODERATE RECALL
+Baseline CE       75% | ######################################
+Focal Loss        73% | #####################################
+Weighted CE       81% | #########################################
+Ordinal           55% | ############################
+
+
+5. CLASSIFICATION REPORT DETAILS
+
+BASELINE CROSS-ENTROPY
+
+Class              Precision   Recall   F1
+No DR                0.97       0.98    0.97
+Mild                 0.52       0.61    0.56
+Moderate             0.77       0.75    0.76
+Severe               0.57       0.45    0.50
+PDR                  0.57       0.55    0.56
+
+Macro avg:     Precision 0.68 | Recall 0.67 | F1 0.67
+Weighted avg:  Precision 0.82 | Recall 0.81 | F1 0.81
+
+
+FOCAL LOSS
+
+Recorded:
+  Test Accuracy = 79.27%
+  Precision = 0.7878
+  Recall = 0.7927
+  F1 = 0.7900
+  Macro Precision = 0.63
+  Macro Recall = 0.62
+  Macro F1 = 0.62
+
+Class recall:
+  No DR = 98%
+  Mild = 48%
+  Moderate = 73%
+  Severe = 41%
+  PDR = 48%
+
+The exact per-class focal precision/F1 values were not preserved in
+the project results available for this report, so they are not
+invented here.
+
+
+WEIGHTED CROSS-ENTROPY
+
+Recorded:
+  Test Accuracy = 82.00%
+  Precision = 0.8137
+  Recall = 0.8200
+  F1 = 0.8155
+  Macro Precision = 0.68
+  Macro Recall = 0.66
+  Macro F1 = 0.67
+
+Class recall:
+  No DR = 97%
+  Mild = 55%
+  Moderate = 81%
+  Severe = 55%
+  PDR = 41%
+
+
+ORDINAL CLASSIFICATION
+
+Class              Precision   Recall   F1
+No DR                0.96       0.87    0.92
+Mild                 0.35       0.61    0.45
+Moderate             0.57       0.55    0.56
+Severe               0.18       0.38    0.25
+PDR                  0.50       0.02    0.04
+
+Macro avg:     Precision 0.51 | Recall 0.49 | F1 0.44
+Weighted avg:  Precision 0.71 | Recall 0.67 | F1 0.67
+
+
+6. CONFUSION MATRICES
+
+Rows = Actual, Columns = Predicted
+Class order: 0 No DR, 1 Mild, 2 Moderate, 3 Severe, 4 PDR
+
+
+BASELINE CE
+
+              Predicted
+Actual       0    1    2    3    4
+-----------------------------------
+No DR      265    6    0    0    0
+Mild         3   34   17    1    1
+Moderate     4   21  112    5    8
+Severe       0    2    5   13    9
+PDR          1    3   12    4   24
+
+
+FOCAL LOSS
+
+              Predicted
+Actual       0    1    2    3    4
+-----------------------------------
+No DR      266    5    0    0    0
+Mild         4   27   22    1    2
+Moderate     5   16  110   11    8
+Severe       2    0    5   12   10
+PDR          1    2   13    7   21
+
+
+WEIGHTED CE
+
+              Predicted
+Actual       0    1    2    3    4
+-----------------------------------
+No DR      264    6    1    0    0
+Mild         4   31   17    1    3
+Moderate     6   10  122    7    5
+Severe       0    0    6   16    7
+PDR          1    3   15    7   18
+
+
+ORDINAL
+
+              Predicted
+Actual       0    1    2    3    4
+-----------------------------------
+No DR      237   21   12    1    0
+Mild         5   34   14    3    0
+Moderate     5   29   83   32    1
+Severe       0    3   15   11    0
+PDR          0    9   21   13    1
+
+
+7. BASELINE VS FOCAL LOSS
+
+Baseline:
+  Accuracy = 81.45%
+  Severe recall = 45%
+  PDR recall = 55%
+
+Focal:
+  Accuracy = 79.27%
+  Severe recall = 41%
+  PDR recall = 48%
+
+Change from baseline:
+  Accuracy = -2.18 percentage points
+  Severe recall = -4 percentage points
+  PDR recall = -7 percentage points
+
+Conclusion:
+Focal Loss did not improve the current setup.
+
+
+8. BASELINE VS WEIGHTED CROSS-ENTROPY
+
+Baseline:
+  Accuracy = 81.45%
+  Severe recall = 45%
+  PDR recall = 55%
+
+Weighted CE:
+  Accuracy = 82.00%
+  Severe recall = 55%
+  PDR recall = 41%
+
+Change:
+  Accuracy = +0.55 percentage points
+  Severe recall = +10 percentage points
+  PDR recall = -14 percentage points
+
+Severe row:
+
+Baseline:
+  Severe -> No DR = 0
+  Severe -> Mild = 2
+  Severe -> Moderate = 5
+  Severe -> Severe = 13
+  Severe -> PDR = 9
+
+Weighted CE:
+  Severe -> No DR = 0
+  Severe -> Mild = 0
+  Severe -> Moderate = 6
+  Severe -> Severe = 16
+  Severe -> PDR = 7
+
+Weighted CE therefore correctly identifies 3 more Severe cases and
+eliminates the two Severe -> Mild errors seen in the baseline.
+
+PDR:
+  Baseline correct = 24/44
+  Weighted CE correct = 18/44
+
+So the improvement for Severe comes with worse exact PDR recognition.
+
+
+9. BASELINE VS ORDINAL CLASSIFICATION
+
+Baseline:
+  Accuracy = 81.45%
+  Severe recall = 45%
+  PDR recall = 55%
+
+Ordinal:
+  Accuracy = 66.55%
+  Severe recall = 38%
+  PDR recall = 2%
+
+Change:
+  Accuracy = -14.90 percentage points
+  Severe recall = -7 percentage points
+  PDR recall = -53 percentage points
+
+PDR row for ordinal:
+  PDR -> No DR = 0
+  PDR -> Mild = 9
+  PDR -> Moderate = 21
+  PDR -> Severe = 13
+  PDR -> PDR = 1
+
+Only 1 of 44 PDR cases is correctly classified.
+
+The ordinal model tends to make relatively nearby severity errors,
+but its ability to distinguish the highest severity class is very
+poor.
+
+
+10. MODEL-BY-MODEL INTERPRETATION
+
+BASELINE CE
+------------
+Strengths:
+  - 81.45% test accuracy
+  - 98% No DR recall
+  - 55% PDR recall, highest among all four
+  - Strong overall reference model
+
+Weaknesses:
+  - Severe recall only 45%
+  - Mild and Severe remain difficult
+  - Some high-severity cases are shifted downward
+
+
+FOCAL LOSS
+----------
+Strengths:
+  - 98% No DR recall
+  - Designed to emphasize difficult examples
+
+Weaknesses:
+  - Accuracy drops to 79.27%
+  - Severe recall drops to 41%
+  - PDR recall drops to 48%
+  - Macro F1 drops to 0.62
+
+Conclusion:
+  It did not solve the difficult-class problem.
+
+
+WEIGHTED CE
+-----------
+Strengths:
+  - Highest test accuracy: 82.00%
+  - Highest weighted F1: 0.8155
+  - Severe recall rises to 55%
+  - Moderate recall rises to 81%
+  - Severe -> Mild errors disappear
+
+Weaknesses:
+  - PDR recall falls to 41%
+  - PDR cases shift more frequently toward Moderate/Severe
+
+Conclusion:
+  Strongest general-performing experiment so far, but the Severe/PDR
+  trade-off requires further analysis.
+
+
+ORDINAL
+-------
+Strengths:
+  - Explicitly represents ordered severity
+  - Many errors remain near the true severity
+
+Weaknesses:
+  - 66.55% test accuracy
+  - 38% Severe recall
+  - 2% PDR recall
+  - Macro F1 = 0.44
+  - High-severity cases collapse toward Moderate/Severe
+
+Conclusion:
+  The current simple BCE ordinal formulation is not competitive.
+
+
+11. CURRENT SCORECARD
+
+                         Baseline   Focal   Weighted   Ordinal
+----------------------------------------------------------------
+Test Accuracy             81.45     79.27     82.00     66.55
+Weighted F1                0.814     0.790     0.816      0.666
+No DR Recall               98%       98%       97%        87%
+Mild Recall                61%       48%       55%        61%
+Moderate Recall            75%       73%       81%        55%
+Severe Recall              45%       41%       55%        38%
+PDR Recall                 55%       48%       41%         2%
+Best Val Accuracy          80.51     81.79     80.51      64.48
+
+
+12. MAIN CONCLUSIONS
+
+1. Standard Cross-Entropy is a strong baseline.
+
+2. Focal Loss did not improve this experiment.
+
+3. Weighted Cross-Entropy achieves the highest overall test accuracy
+   (82.00%) and the highest Severe recall (55%).
+
+4. The baseline achieves the highest PDR recall (55%).
+
+5. Therefore, no single tested model currently maximizes both Severe
+   and PDR recall.
+
+6. The ordinal formulation is clearly weaker in its current form.
+
+7. No DR detection is strong across all approaches. The difficult
+   problem is distinguishing severity levels, especially Moderate,
+   Severe, and PDR.
+
+8. Accuracy alone is not sufficient to evaluate this project.
+
+9. The next useful analysis is to measure the direction of errors:
+   whether Severe/PDR cases are being pushed toward LOWER severity,
+   HIGHER severity, or neighboring severity classes.
+
+10. The next model decision should therefore be based on the
+    confusion-matrix and severity-error analysis rather than simply
+    choosing the model with the highest accuracy.
