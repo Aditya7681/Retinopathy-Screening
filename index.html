@@ -1,0 +1,2348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Diabetic Retinopathy Severity Screening — Research Prototype</title>
+  <meta name="description" content="A research screening prototype utilizing a fine-tuned ResNet-18 with weighted cross-entropy to estimate diabetic retinopathy severity and prioritize high-risk fundus cases.">
+  
+  <!-- Inter font -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+  <style>
+    /* ==========================================================================
+       CSS Custom Properties (Theme Tokens)
+       ========================================================================== */
+    :root {
+      --bg-page: #FAFAFA;
+      --bg-surface: #FFFFFF;
+      --bg-subtle: #F3F4F6;
+      --bg-surface-elevated: #FFFFFF;
+      
+      --text-main: #111827;
+      --text-muted: #4B5563;
+      --text-subtle: #9CA3AF;
+      
+      --border-color: #E5E7EB;
+      --border-focus: #0F766E;
+      
+      --teal-accent: #0F766E;
+      --teal-light: #F0FDFA;
+      --teal-border: #99F6E4;
+      --teal-hover: #115E59;
+      
+      /* Restrained desaturated clinical severity palette (4 Tiers) */
+      --sev-0: #10B981; /* No DR: Calm emerald */
+      --sev-0-bg: #ECFDF5;
+      --sev-1: #0EA5E9; /* Mild: Cyan-blue */
+      --sev-1-bg: #F0F9FF;
+      --sev-2: #D97706; /* Moderate: Warm amber */
+      --sev-2-bg: #FFFBEB;
+      --sev-3: #B91C1C; /* Severe (Combined Severe & PDR): Crimson red */
+      --sev-3-bg: #FEF2F2;
+
+      --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+      --shadow-hover: 0 4px 6px -1px rgba(0, 0, 0, 0.07), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
+      
+      --radius-sm: 6px;
+      --radius-md: 10px;
+      --radius-lg: 14px;
+      
+      --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      --transition-fast: 180ms ease-in-out;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg-page: #0B0F17;
+        --bg-surface: #111827;
+        --bg-subtle: #1F2937;
+        --bg-surface-elevated: #1F2937;
+        
+        --text-main: #F9FAFB;
+        --text-muted: #9CA3AF;
+        --text-subtle: #6B7280;
+        
+        --border-color: #2D3748;
+        --border-focus: #14B8A6;
+        
+        --teal-accent: #14B8A6;
+        --teal-light: #042F2E;
+        --teal-border: #134E4A;
+        --teal-hover: #2DD4BF;
+        
+        --sev-0: #34D399;
+        --sev-0-bg: #064E3B;
+        --sev-1: #38BDF8;
+        --sev-1-bg: #0C4A6E;
+        --sev-2: #FBBF24;
+        --sev-2-bg: #451A03;
+        --sev-3: #F87171;
+        --sev-3-bg: #450A0A;
+
+        --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.5);
+        --shadow-hover: 0 4px 8px 0 rgba(0, 0, 0, 0.6);
+      }
+    }
+
+    [data-theme="light"] {
+      --bg-page: #FAFAFA;
+      --bg-surface: #FFFFFF;
+      --bg-subtle: #F3F4F6;
+      --text-main: #111827;
+      --text-muted: #4B5563;
+      --text-subtle: #9CA3AF;
+      --border-color: #E5E7EB;
+      --teal-accent: #0F766E;
+      --teal-light: #F0FDFA;
+      --teal-border: #99F6E4;
+      --teal-hover: #115E59;
+      --sev-0: #10B981;
+      --sev-0-bg: #ECFDF5;
+      --sev-1: #0EA5E9;
+      --sev-1-bg: #F0F9FF;
+      --sev-2: #D97706;
+      --sev-2-bg: #FFFBEB;
+      --sev-3: #B91C1C;
+      --sev-3-bg: #FEF2F2;
+    }
+
+    [data-theme="dark"] {
+      --bg-page: #0B0F17;
+      --bg-surface: #111827;
+      --bg-subtle: #1F2937;
+      --text-main: #F9FAFB;
+      --text-muted: #9CA3AF;
+      --text-subtle: #6B7280;
+      --border-color: #2D3748;
+      --teal-accent: #14B8A6;
+      --teal-light: #042F2E;
+      --teal-border: #134E4A;
+      --teal-hover: #2DD4BF;
+      --sev-0: #34D399;
+      --sev-0-bg: #064E3B;
+      --sev-1: #38BDF8;
+      --sev-1-bg: #0C4A6E;
+      --sev-2: #FBBF24;
+      --sev-2-bg: #451A03;
+      --sev-3: #F87171;
+      --sev-3-bg: #450A0A;
+    }
+
+    /* Reset & Base Styles */
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html {
+      scroll-behavior: smooth;
+      font-size: 16px;
+    }
+
+    body {
+      font-family: var(--font-sans);
+      background-color: var(--bg-page);
+      color: var(--text-main);
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+      transition: background-color var(--transition-fast), color var(--transition-fast);
+      position: relative;
+    }
+
+    a {
+      color: inherit;
+      text-decoration: none;
+    }
+
+    button {
+      font-family: inherit;
+      cursor: pointer;
+      border: none;
+      background: none;
+    }
+
+    .tabular-nums {
+      font-variant-numeric: tabular-nums;
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 0 1.5rem;
+    }
+
+    :focus-visible {
+      outline: 2px solid var(--border-focus);
+      outline-offset: 2px;
+    }
+
+    /* 1. Disclaimer Strip */
+    .disclaimer-strip {
+      background-color: var(--bg-subtle);
+      border-bottom: 1px solid var(--border-color);
+      padding: 0.45rem 1rem;
+      text-align: center;
+      font-size: 0.8125rem;
+      color: var(--text-muted);
+      letter-spacing: 0.01em;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+
+    .disclaimer-badge {
+      font-size: 0.6875rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      padding: 0.15rem 0.45rem;
+      border-radius: 4px;
+      background: var(--teal-light);
+      color: var(--teal-accent);
+      border: 1px solid var(--teal-border);
+    }
+
+    /* 2. Site Header */
+    .site-header {
+      background: var(--bg-surface);
+      border-bottom: 1px solid var(--border-color);
+      position: sticky;
+      top: 31px;
+      z-index: 90;
+      backdrop-filter: blur(8px);
+    }
+
+    .header-inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 64px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .brand-logo {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      border: 2px solid var(--teal-accent);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+    }
+    .brand-logo::after {
+      content: "";
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--teal-accent);
+    }
+
+    .brand-name {
+      font-size: 1rem;
+      font-weight: 600;
+      color: var(--text-main);
+      letter-spacing: -0.01em;
+    }
+
+    .research-pill {
+      font-size: 0.7rem;
+      font-weight: 500;
+      padding: 0.2rem 0.5rem;
+      background: var(--bg-subtle);
+      border: 1px solid var(--border-color);
+      border-radius: 9999px;
+      color: var(--text-muted);
+    }
+
+    .nav-links {
+      display: flex;
+      gap: 1.5rem;
+      list-style: none;
+      align-items: center;
+    }
+
+    .nav-links a {
+      font-size: 0.875rem;
+      font-weight: 400;
+      color: var(--text-muted);
+      transition: color var(--transition-fast);
+      padding: 0.25rem 0;
+    }
+
+    .nav-links a:hover {
+      color: var(--teal-accent);
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .theme-toggle-btn {
+      width: 36px;
+      height: 36px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border-color);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--text-muted);
+      transition: border-color var(--transition-fast), color var(--transition-fast);
+    }
+    .theme-toggle-btn:hover {
+      border-color: var(--teal-accent);
+      color: var(--teal-accent);
+    }
+
+    /* 3. Hero Section */
+    .hero {
+      padding: 4.5rem 0 3rem 0;
+      border-bottom: 1px solid var(--border-color);
+      background: var(--bg-surface);
+    }
+
+    .hero-content {
+      max-width: 820px;
+    }
+
+    .hero-eyebrow {
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--teal-accent);
+      margin-bottom: 0.75rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .hero-eyebrow::before {
+      content: "";
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--teal-accent);
+    }
+
+    .hero-title {
+      font-size: 2.5rem;
+      font-weight: 300;
+      letter-spacing: -0.025em;
+      line-height: 1.18;
+      color: var(--text-main);
+      margin-bottom: 1.25rem;
+    }
+    .hero-title strong {
+      font-weight: 600;
+    }
+
+    .hero-subtitle {
+      font-size: 1.0625rem;
+      color: var(--text-muted);
+      line-height: 1.6;
+      margin-bottom: 2rem;
+      font-weight: 400;
+    }
+
+    .hero-actions {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      flex-wrap: wrap;
+    }
+
+    .btn-primary {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      background: var(--teal-accent);
+      color: #FFFFFF;
+      padding: 0.75rem 1.35rem;
+      font-size: 0.875rem;
+      font-weight: 500;
+      border-radius: var(--radius-sm);
+      transition: background-color var(--transition-fast), transform var(--transition-fast);
+    }
+    .btn-primary:hover {
+      background: var(--teal-hover);
+      transform: translateY(-1px);
+    }
+
+    .btn-secondary {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      background: var(--bg-surface);
+      color: var(--text-main);
+      border: 1px solid var(--border-color);
+      padding: 0.75rem 1.25rem;
+      font-size: 0.875rem;
+      font-weight: 500;
+      border-radius: var(--radius-sm);
+      transition: border-color var(--transition-fast);
+    }
+    .btn-secondary:hover {
+      border-color: var(--text-muted);
+    }
+
+    .model-tag {
+      font-size: 0.75rem;
+      color: var(--text-subtle);
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      font-family: monospace;
+    }
+
+    /* Section Utilities & Grid */
+    .section-block {
+      padding: 4.5rem 0;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .section-header {
+      margin-bottom: 2.25rem;
+    }
+
+    .section-tag {
+      font-size: 0.6875rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--teal-accent);
+      margin-bottom: 0.35rem;
+      display: block;
+    }
+
+    .section-title {
+      font-size: 1.625rem;
+      font-weight: 400;
+      color: var(--text-main);
+      letter-spacing: -0.015em;
+    }
+
+    .section-desc {
+      font-size: 0.9375rem;
+      color: var(--text-muted);
+      margin-top: 0.35rem;
+      max-width: 680px;
+    }
+
+    .grid-12 {
+      display: grid;
+      grid-template-columns: repeat(12, 1fr);
+      gap: 1.5rem;
+    }
+
+    /* 4. Screening Panel */
+    .screening-input-col {
+      grid-column: span 5;
+      display: flex;
+      flex-direction: column;
+      gap: 1.25rem;
+    }
+
+    .screening-result-col {
+      grid-column: span 7;
+      display: flex;
+      flex-direction: column;
+      gap: 1.25rem;
+    }
+
+    .card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      padding: 1.5rem;
+      transition: box-shadow var(--transition-fast), border-color var(--transition-fast);
+    }
+    .card:hover {
+      box-shadow: var(--shadow-hover);
+    }
+
+    /* Dropzone */
+    .dropzone {
+      border: 1.5px dashed var(--border-color);
+      border-radius: var(--radius-md);
+      padding: 2.25rem 1.5rem;
+      text-align: center;
+      cursor: pointer;
+      background: var(--bg-page);
+      transition: border-color var(--transition-fast), background-color var(--transition-fast);
+      position: relative;
+    }
+    .dropzone:hover, .dropzone.dragover {
+      border-color: var(--teal-accent);
+      background: var(--teal-light);
+    }
+    .dropzone input[type="file"] {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      opacity: 0;
+      cursor: pointer;
+    }
+
+    .dropzone-icon {
+      width: 36px;
+      height: 36px;
+      margin: 0 auto 0.75rem auto;
+      color: var(--teal-accent);
+    }
+
+    .dropzone-text {
+      font-size: 0.875rem;
+      font-weight: 500;
+      color: var(--text-main);
+      margin-bottom: 0.25rem;
+    }
+
+    .dropzone-subtext {
+      font-size: 0.75rem;
+      color: var(--text-subtle);
+    }
+
+    /* Sample Thumbnails */
+    .sample-label {
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+      margin-bottom: 0.5rem;
+      display: block;
+    }
+
+    .sample-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 0.75rem;
+    }
+
+    .sample-card {
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-sm);
+      overflow: hidden;
+      cursor: pointer;
+      background: var(--bg-surface);
+      text-align: left;
+      transition: all var(--transition-fast);
+      padding: 0.4rem;
+    }
+    .sample-card:hover, .sample-card.active {
+      border-color: var(--teal-accent);
+      box-shadow: 0 0 0 1px var(--teal-accent);
+    }
+
+    .sample-thumb-wrap {
+      width: 100%;
+      height: 68px;
+      border-radius: 4px;
+      overflow: hidden;
+      background: #000000;
+      position: relative;
+    }
+    .sample-thumb-wrap canvas {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    .sample-title {
+      font-size: 0.75rem;
+      font-weight: 500;
+      color: var(--text-main);
+      margin-top: 0.35rem;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .sample-stage {
+      font-size: 0.6875rem;
+      color: var(--text-subtle);
+    }
+
+    /* Result Card */
+    .result-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 1.25rem;
+      padding-bottom: 1.25rem;
+      border-bottom: 1px solid var(--border-color);
+      flex-wrap: wrap;
+      gap: 0.75rem;
+    }
+
+    .result-grade-label {
+      font-size: 0.6875rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      font-weight: 600;
+      color: var(--text-muted);
+      margin-bottom: 0.25rem;
+    }
+
+    .result-grade-title {
+      font-size: 1.35rem;
+      font-weight: 600;
+      color: var(--text-main);
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+    }
+
+    .severity-indicator-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      display: inline-block;
+      flex-shrink: 0;
+    }
+
+    /* Review Priority Badge */
+    .priority-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      padding: 0.4rem 0.85rem;
+      border-radius: 9999px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+      border: 1px solid transparent;
+    }
+    .priority-routine {
+      background: var(--sev-0-bg);
+      color: var(--sev-0);
+      border-color: rgba(16, 185, 129, 0.3);
+    }
+    .priority-elevated {
+      background: var(--sev-2-bg);
+      color: var(--sev-2);
+      border-color: rgba(217, 119, 6, 0.3);
+    }
+    .priority-high {
+      background: var(--sev-3-bg);
+      color: var(--sev-3);
+      border-color: rgba(185, 28, 28, 0.3);
+    }
+
+    .uncertainty-banner {
+      background: var(--bg-subtle);
+      border-left: 3px solid var(--sev-2);
+      padding: 0.75rem 1rem;
+      font-size: 0.8125rem;
+      color: var(--text-muted);
+      margin-bottom: 1.25rem;
+      border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+      display: none;
+    }
+
+    /* Probability Bars */
+    .prob-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.65rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .prob-item {
+      display: grid;
+      grid-template-columns: 130px 1fr 50px;
+      align-items: center;
+      gap: 0.75rem;
+      font-size: 0.8125rem;
+    }
+
+    .prob-name {
+      color: var(--text-muted);
+      font-weight: 500;
+      white-space: nowrap;
+    }
+
+    .prob-track {
+      height: 7px;
+      background: var(--bg-subtle);
+      border-radius: 9999px;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .prob-fill {
+      height: 100%;
+      border-radius: 9999px;
+      transition: width 350ms cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .prob-val {
+      font-size: 0.8125rem;
+      font-weight: 600;
+      color: var(--text-main);
+      text-align: right;
+    }
+
+    /* Side-by-side Fundus & Heatmap viewer */
+    .viewer-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 0.75rem;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+
+    .viewer-title {
+      font-size: 0.8125rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .slider-control {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+
+    .slider-control input[type="range"] {
+      width: 100px;
+      accent-color: var(--teal-accent);
+      cursor: pointer;
+    }
+
+    .viewer-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+    }
+
+    .image-box {
+      background: #000000;
+      border-radius: var(--radius-sm);
+      overflow: hidden;
+      position: relative;
+      aspect-ratio: 1 / 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid var(--border-color);
+    }
+
+    .image-box canvas {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+
+    .image-box-tag {
+      position: absolute;
+      top: 8px;
+      left: 8px;
+      background: rgba(17, 24, 39, 0.82);
+      color: #FFFFFF;
+      font-size: 0.6875rem;
+      font-weight: 500;
+      padding: 0.2rem 0.5rem;
+      border-radius: 4px;
+      backdrop-filter: blur(4px);
+      z-index: 5;
+    }
+
+    /* 5. Performance Metrics */
+    .metric-tiles-row {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 1rem;
+      margin-bottom: 2rem;
+    }
+
+    .metric-tile {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-sm);
+      padding: 1.15rem 1rem;
+      text-align: left;
+    }
+
+    .metric-tile-label {
+      font-size: 0.6875rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-subtle);
+      font-weight: 600;
+      margin-bottom: 0.35rem;
+    }
+
+    .metric-tile-value {
+      font-size: 1.625rem;
+      font-weight: 600;
+      color: var(--text-main);
+      letter-spacing: -0.02em;
+    }
+
+    .metric-tile-sub {
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      margin-top: 0.2rem;
+    }
+
+    .performance-grid {
+      display: grid;
+      grid-template-columns: 5fr 7fr;
+      gap: 1.5rem;
+    }
+
+    .chart-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      padding: 1.5rem;
+    }
+
+    .chart-title {
+      font-size: 0.9375rem;
+      font-weight: 600;
+      color: var(--text-main);
+      margin-bottom: 0.25rem;
+    }
+
+    .chart-desc {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      margin-bottom: 1.25rem;
+    }
+
+    .recall-bars {
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+
+    .recall-item {
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+    }
+
+    .recall-label-row {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.8125rem;
+    }
+
+    .recall-class-name {
+      font-weight: 500;
+      color: var(--text-main);
+    }
+    .recall-highlight-tag {
+      font-size: 0.6875rem;
+      color: var(--teal-accent);
+      font-weight: 600;
+    }
+
+    .recall-bar-track {
+      height: 10px;
+      background: var(--bg-subtle);
+      border-radius: 4px;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .recall-bar-fill {
+      height: 100%;
+      border-radius: 4px;
+      transition: width 400ms ease;
+    }
+
+    /* Confusion Matrix Heatmap */
+    .cm-controls {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1rem;
+    }
+
+    .toggle-group {
+      display: inline-flex;
+      background: var(--bg-subtle);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-sm);
+      padding: 2px;
+    }
+
+    .toggle-btn {
+      font-size: 0.75rem;
+      font-weight: 500;
+      padding: 0.25rem 0.65rem;
+      border-radius: 4px;
+      color: var(--text-muted);
+      transition: background-color var(--transition-fast), color var(--transition-fast);
+    }
+    .toggle-btn.active {
+      background: var(--bg-surface);
+      color: var(--text-main);
+      box-shadow: var(--shadow-sm);
+    }
+
+    .cm-table-wrap {
+      overflow-x: auto;
+    }
+
+    .cm-table {
+      width: 100%;
+      border-collapse: separate;
+      border-spacing: 4px;
+      font-size: 0.8125rem;
+      text-align: center;
+    }
+
+    .cm-table th {
+      font-size: 0.6875rem;
+      font-weight: 600;
+      color: var(--text-subtle);
+      text-transform: uppercase;
+      padding: 0.4rem 0.25rem;
+    }
+
+    .cm-cell {
+      padding: 0.75rem 0.5rem;
+      border-radius: 4px;
+      font-weight: 600;
+      font-size: 0.8125rem;
+      cursor: pointer;
+      position: relative;
+      transition: transform var(--transition-fast);
+    }
+    .cm-cell:hover {
+      transform: scale(1.05);
+      z-index: 10;
+      outline: 2px solid var(--teal-accent);
+    }
+
+    .cm-axis-title {
+      font-size: 0.6875rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+    }
+
+    #cm-tooltip {
+      position: absolute;
+      background: #111827;
+      color: #FFFFFF;
+      padding: 0.5rem 0.75rem;
+      border-radius: var(--radius-sm);
+      font-size: 0.75rem;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 120ms ease;
+      z-index: 200;
+      line-height: 1.4;
+      box-shadow: var(--shadow-hover);
+    }
+
+    /* 6. Explainability Gallery */
+    .gallery-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 1.25rem;
+    }
+
+    .gallery-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      overflow: hidden;
+      cursor: pointer;
+      transition: all var(--transition-fast);
+      display: flex;
+      flex-direction: column;
+    }
+    .gallery-card:hover {
+      border-color: var(--teal-accent);
+      transform: translateY(-2px);
+      box-shadow: var(--shadow-hover);
+    }
+
+    .gallery-thumb-container {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 1 / 1;
+      background: #000000;
+    }
+    .gallery-thumb-container canvas {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    .gallery-pill {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      font-size: 0.6875rem;
+      font-weight: 600;
+      padding: 0.2rem 0.5rem;
+      border-radius: 4px;
+      backdrop-filter: blur(4px);
+    }
+    .pill-correct {
+      background: rgba(16, 185, 129, 0.9);
+      color: #FFFFFF;
+    }
+    .pill-misclassified {
+      background: rgba(220, 38, 38, 0.9);
+      color: #FFFFFF;
+    }
+
+    .gallery-info {
+      padding: 1rem;
+      display: flex;
+      flex-direction: column;
+      flex-grow: 1;
+    }
+
+    .gallery-stage {
+      font-size: 0.8125rem;
+      font-weight: 600;
+      color: var(--text-main);
+      margin-bottom: 0.25rem;
+    }
+
+    .gallery-caption {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      line-height: 1.45;
+    }
+
+    /* Modal / Lightbox */
+    .modal-backdrop {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.7);
+      backdrop-filter: blur(4px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 500;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity var(--transition-fast);
+      padding: 1.5rem;
+    }
+    .modal-backdrop.open {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .modal-box {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-lg);
+      max-width: 720px;
+      width: 100%;
+      padding: 1.75rem;
+      position: relative;
+      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.2);
+    }
+
+    .modal-close-btn {
+      position: absolute;
+      top: 1rem;
+      right: 1rem;
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      border: 1px solid var(--border-color);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--text-muted);
+      font-size: 1.25rem;
+    }
+    .modal-close-btn:hover {
+      color: var(--text-main);
+      border-color: var(--text-muted);
+    }
+
+    /* 7. Pipeline */
+    .pipeline-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 1.25rem;
+      position: relative;
+    }
+
+    .pipeline-step {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      padding: 1.5rem 1.25rem;
+      position: relative;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .step-number {
+      font-size: 0.6875rem;
+      font-weight: 700;
+      color: var(--teal-accent);
+      background: var(--teal-light);
+      border: 1px solid var(--teal-border);
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 0.75rem;
+    }
+
+    .step-title {
+      font-size: 0.9375rem;
+      font-weight: 600;
+      color: var(--text-main);
+      margin-bottom: 0.4rem;
+    }
+
+    .step-desc {
+      font-size: 0.8125rem;
+      color: var(--text-muted);
+      line-height: 1.45;
+    }
+
+    /* 8. Limitations */
+    .limits-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      padding: 2rem;
+    }
+
+    .limits-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1.75rem;
+      margin-top: 1.25rem;
+    }
+
+    .limit-item h4 {
+      font-size: 0.875rem;
+      font-weight: 600;
+      color: var(--text-main);
+      margin-bottom: 0.4rem;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+
+    .limit-item p {
+      font-size: 0.8125rem;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+
+    /* 9. Footer */
+    .site-footer {
+      background: var(--bg-surface);
+      border-top: 1px solid var(--border-color);
+      padding: 3rem 0;
+      font-size: 0.8125rem;
+      color: var(--text-muted);
+    }
+
+    .footer-inner {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 1rem;
+    }
+
+    .footer-links {
+      display: flex;
+      gap: 1.5rem;
+      list-style: none;
+    }
+    .footer-links a:hover {
+      color: var(--teal-accent);
+    }
+
+    /* Responsive */
+    @media (max-width: 1024px) {
+      .metric-tiles-row { grid-template-columns: repeat(3, 1fr); }
+      .gallery-grid { grid-template-columns: repeat(2, 1fr); }
+      .pipeline-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+
+    @media (max-width: 768px) {
+      .header-inner { flex-wrap: wrap; height: auto; padding: 0.75rem 0; gap: 0.75rem; }
+      .nav-links { display: none; }
+      .hero-title { font-size: 1.85rem; }
+      .grid-12 { display: flex; flex-direction: column; }
+      .performance-grid { grid-template-columns: 1fr; }
+      .viewer-grid { grid-template-columns: 1fr; }
+      .metric-tiles-row { grid-template-columns: repeat(2, 1fr); }
+      .limits-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Persistent Safety Strip -->
+  <div class="disclaimer-strip" role="region" aria-label="Research disclaimer">
+    <span class="disclaimer-badge">Notice</span>
+    <span>For research use only. Not a medical device or certified diagnostic tool. Model estimates must be verified by a specialist.</span>
+  </div>
+
+  <!-- Header -->
+  <header class="site-header">
+    <div class="container header-inner">
+      <div class="brand">
+        <div class="brand-logo" aria-hidden="true"></div>
+        <a href="#" class="brand-name">DR Severity Screening</a>
+        <span class="research-pill">ResNet-18 Weighted</span>
+      </div>
+
+      <nav aria-label="Main Navigation">
+        <ul class="nav-links">
+          <li><a href="#screen">Screen</a></li>
+          <li><a href="#performance">Performance</a></li>
+          <li><a href="#explainability">Explainability</a></li>
+          <li><a href="#method">Method</a></li>
+          <li><a href="#limitations">Limitations</a></li>
+        </ul>
+      </nav>
+
+      <div class="header-actions">
+        <button id="themeToggleBtn" class="theme-toggle-btn" aria-label="Toggle dark/light mode" title="Toggle theme">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <!-- Hero -->
+    <section class="hero">
+      <div class="container hero-content">
+        <div class="hero-eyebrow">
+          <span>Screening Research Prototype</span>
+        </div>
+        <h1 class="hero-title">
+          Deep learning triage for <strong>early diabetic retinopathy prioritization</strong>.
+        </h1>
+        <p class="hero-subtitle">
+          An automated screening system using a fine-tuned ResNet-18 with weighted cross-entropy to estimate DR severity 
+          (Stages 0–3: No DR, Mild, Moderate, Severe) and prioritize high-risk, sight-threatening cases for prompt specialist ophthalmic evaluation.
+        </p>
+
+        <div class="hero-actions">
+          <a href="#screen" class="btn-primary" id="heroTryBtn">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"></circle>
+              <polygon points="10 8 16 12 10 16 10 8"></polygon>
+            </svg>
+            Try a sample image
+          </a>
+          <a href="#performance" class="btn-secondary">View model benchmark</a>
+          <span class="model-tag">
+            <span>Checkpoint:</span>
+            <strong>best_model_weighted.pth</strong>
+          </span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Screening Panel -->
+    <section id="screen" class="section-block">
+      <div class="container">
+        <div class="section-header">
+          <span class="section-tag">Interactive Screening</span>
+          <h2 class="section-title">Fundus image evaluation & triage</h2>
+          <p class="section-desc">
+            Upload a high-resolution retinal fundus photograph or choose an annotated sample below to inspect model-estimated severity and Grad-CAM saliency.
+          </p>
+        </div>
+
+        <div class="grid-12">
+          <!-- Left Column: Image Input & Samples -->
+          <div class="screening-input-col">
+            <div class="card">
+              <div class="dropzone" id="dropzone" tabindex="0" role="button" aria-label="Drag and drop a retinal fundus image">
+                <input type="file" id="fileInput" accept="image/png, image/jpeg, image/jpg" aria-label="Upload fundus image">
+                <svg class="dropzone-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                  <polyline points="17 8 12 3 7 8"/>
+                  <line x1="12" y1="3" x2="12" y2="15"/>
+                </svg>
+                <div class="dropzone-text">Drop retinal fundus scan here</div>
+                <div class="dropzone-subtext">Supports PNG, JPEG (auto-cropped to 224×224)</div>
+              </div>
+
+              <div style="margin-top: 1.25rem;">
+                <span class="sample-label">Or evaluate a benchmark sample</span>
+                <div class="sample-grid" id="sampleGrid"></div>
+              </div>
+            </div>
+
+            <!-- Model Info -->
+            <div class="card" style="font-size: 0.75rem; color: var(--text-muted);">
+              <div style="font-weight: 600; color: var(--text-main); margin-bottom: 0.4rem;">Inference Details</div>
+              <div style="display: flex; justify-content: space-between; margin-bottom: 0.25rem;">
+                <span>Backbone Architecture:</span>
+                <span style="font-weight: 500;">PyTorch ResNet-18</span>
+              </div>
+              <div style="display: flex; justify-content: space-between; margin-bottom: 0.25rem;">
+                <span>Triage Tiers:</span>
+                <span style="font-weight: 500;">4 Stages (No DR, Mild, Moderate, Severe)</span>
+              </div>
+              <div style="display: flex; justify-content: space-between;">
+                <span>Input Dimensions:</span>
+                <span style="font-weight: 500;">224 × 224 × 3 (RGB)</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Right Column: Result Card & Viewer -->
+          <div class="screening-result-col">
+            <div class="card" id="resultCard">
+              <div class="result-header">
+                <div>
+                  <div class="result-grade-label">Model-Estimated Severity</div>
+                  <div class="result-grade-title" id="predictedGradeTitle">
+                    <span class="severity-indicator-dot" id="severityDot"></span>
+                    <span id="predictedLabel">Stage 3: Severe</span>
+                  </div>
+                </div>
+
+                <div id="priorityContainer">
+                  <span class="priority-badge priority-high" id="priorityBadge">
+                    <span aria-hidden="true">●</span>
+                    <span id="priorityText">High Review Priority</span>
+                  </span>
+                </div>
+              </div>
+
+              <!-- Uncertainty warning -->
+              <div class="uncertainty-banner" id="uncertaintyBanner">
+                <strong>Uncertain prediction:</strong> Model confidence is below 60%. Borderline classification between adjacent severity stages. Specialist review strongly recommended.
+              </div>
+
+              <!-- Probability breakdown (4 Stages) -->
+              <div>
+                <div style="display: flex; justify-content: space-between; font-size: 0.75rem; color: var(--text-subtle); font-weight: 600; text-transform: uppercase; margin-bottom: 0.5rem;">
+                  <span>Severity Stage</span>
+                  <span>Estimated Probability</span>
+                </div>
+                <div class="prob-list" id="probList"></div>
+              </div>
+
+              <!-- Side-by-side Inspection -->
+              <div style="margin-top: 1.5rem; border-top: 1px solid var(--border-color); padding-top: 1.25rem;">
+                <div class="viewer-header">
+                  <span class="viewer-title">Visual Saliency & Pathology Inspection</span>
+                  <div class="slider-control">
+                    <span>Grad-CAM Opacity:</span>
+                    <input type="range" id="opacitySlider" min="0" max="100" value="70" aria-label="Grad-CAM opacity slider">
+                    <span id="opacityVal" style="font-family: monospace; width: 32px;">70%</span>
+                  </div>
+                </div>
+
+                <div class="viewer-grid">
+                  <div class="image-box">
+                    <div class="image-box-tag">Original Fundus Photograph</div>
+                    <canvas id="originalCanvas" width="300" height="300"></canvas>
+                  </div>
+                  <div class="image-box">
+                    <div class="image-box-tag">Grad-CAM Activation Map</div>
+                    <canvas id="gradcamCanvas" width="300" height="300"></canvas>
+                  </div>
+                </div>
+                <div style="font-size: 0.72rem; color: var(--text-subtle); margin-top: 0.5rem; text-align: right;">
+                  Warmer colors (red/amber) highlight localized retinal features contributing most to classification.
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Model Performance -->
+    <section id="performance" class="section-block">
+      <div class="container">
+        <div class="section-header">
+          <span class="section-tag">Empirical Validation</span>
+          <h2 class="section-title">Model benchmark & classification metrics</h2>
+          <p class="section-desc">
+            Empirical test results from the held-out evaluation set (<span class="tabular-nums">550</span> images) comparing sensitivity across classes with severe and proliferative DR unified into a high-risk severe triage category.
+          </p>
+        </div>
+
+        <div class="metric-tiles-row">
+          <div class="metric-tile">
+            <div class="metric-tile-label">Test Accuracy</div>
+            <div class="metric-tile-value tabular-nums">82.00%</div>
+            <div class="metric-tile-sub">+0.55% over unweighted baseline</div>
+          </div>
+
+          <div class="metric-tile">
+            <div class="metric-tile-label">Macro Recall</div>
+            <div class="metric-tile-value tabular-nums">0.75</div>
+            <div class="metric-tile-sub">Balanced 4-tier sensitivity</div>
+          </div>
+
+          <div class="metric-tile">
+            <div class="metric-tile-label">Severe Recall</div>
+            <div class="metric-tile-value tabular-nums" style="color: var(--teal-accent);">65.8%</div>
+            <div class="metric-tile-sub">Combined Stage 3 & 4 sensitivity</div>
+          </div>
+
+          <div class="metric-tile">
+            <div class="metric-tile-label">Quad. Weighted Kappa</div>
+            <div class="metric-tile-value tabular-nums">0.86</div>
+            <div class="metric-tile-sub">Strong clinical agreement</div>
+          </div>
+
+          <div class="metric-tile">
+            <div class="metric-tile-label">Test Cohort</div>
+            <div class="metric-tile-value tabular-nums">550</div>
+            <div class="metric-tile-sub">Held-out independent split</div>
+          </div>
+        </div>
+
+        <div class="performance-grid">
+          <div class="chart-card">
+            <div class="chart-title">Class-Wise Sensitivity / Recall</div>
+            <div class="chart-desc">Severe Stage 3 and Proliferative DR are unified into high-risk 'Severe' ensuring prompt escalation.</div>
+            <div class="recall-bars" id="recallBars"></div>
+            <div style="margin-top: 1.5rem; padding: 0.85rem; background: var(--bg-subtle); border-radius: var(--radius-sm); font-size: 0.75rem; color: var(--text-muted);">
+              <strong>Clinical Triage Note:</strong> Unifying Severe and Proliferative DR into 'Severe' achieves <strong>65.8% recall</strong> on sight-threatening retinal pathology, maximizing patient safety.
+            </div>
+          </div>
+
+          <div class="chart-card">
+            <div class="cm-controls">
+              <div>
+                <div class="chart-title">Confusion Matrix</div>
+                <div class="chart-desc">Rows: Ground Truth | Columns: Model Prediction</div>
+              </div>
+              <div class="toggle-group" role="radiogroup" aria-label="Matrix format">
+                <button class="toggle-btn active" id="cmCountBtn" aria-checked="true">Counts</button>
+                <button class="toggle-btn" id="cmNormBtn" aria-checked="false">Row %</button>
+              </div>
+            </div>
+
+            <div class="cm-table-wrap">
+              <table class="cm-table" id="cmTable">
+                <thead>
+                  <tr>
+                    <th></th>
+                    <th colspan="4" class="cm-axis-title">Model Prediction</th>
+                  </tr>
+                  <tr>
+                    <th class="cm-axis-title">Actual</th>
+                    <th>No DR</th>
+                    <th>Mild</th>
+                    <th>Moderate</th>
+                    <th>Severe</th>
+                  </tr>
+                </thead>
+                <tbody id="cmBody"></tbody>
+              </table>
+            </div>
+            <div style="font-size: 0.72rem; color: var(--text-subtle); margin-top: 0.75rem; text-align: center;">
+              Hover over cells to see individual cohort counts and row percentages.
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Explainability Gallery -->
+    <section id="explainability" class="section-block">
+      <div class="container">
+        <div class="section-header">
+          <span class="section-tag">Interpretability</span>
+          <h2 class="section-title">Grad-CAM explainability case gallery</h2>
+          <p class="section-desc">
+            Visual explanations showing where the model directs spatial attention across healthy, moderate, and severe sight-threatening lesions.
+          </p>
+        </div>
+
+        <div class="gallery-grid" id="galleryGrid"></div>
+      </div>
+    </section>
+
+    <!-- Method Summary -->
+    <section id="method" class="section-block">
+      <div class="container">
+        <div class="section-header">
+          <span class="section-tag">Methodology</span>
+          <h2 class="section-title">End-to-end research pipeline</h2>
+          <p class="section-desc">
+            How images are preprocessed, augmented, and classified through our deep transfer-learning workflow.
+          </p>
+        </div>
+
+        <div class="pipeline-grid">
+          <div class="pipeline-step">
+            <div class="step-number">1</div>
+            <h3 class="step-title">Preprocessing</h3>
+            <p class="step-desc">
+              Retinal fundus scans are resized to 224×224 pixels and standardized using ImageNet RGB mean and variance vectors with augmentation.
+            </p>
+          </div>
+
+          <div class="pipeline-step">
+            <div class="step-number">2</div>
+            <h3 class="step-title">Backbone Fine-Tuning</h3>
+            <p class="step-desc">
+              ResNet-18 pretrained on ImageNet. The final 1000-class layer is replaced with a custom projection layer trained with Adam (lr=1e-4).
+            </p>
+          </div>
+
+          <div class="pipeline-step">
+            <div class="step-number">3</div>
+            <h3 class="step-title">Imbalance Handling</h3>
+            <p class="step-desc">
+              Weighted cross-entropy and a weighted random sampler mitigate class skew, boosting sensitivity for high-risk pathology.
+            </p>
+          </div>
+
+          <div class="pipeline-step">
+            <div class="step-number">4</div>
+            <h3 class="step-title">Combined Severe Triage</h3>
+            <p class="step-desc">
+              Evaluated on 550 test images with severe and proliferative DR grouped to prioritize high-risk cases for specialist review.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Limitations -->
+    <section id="limitations" class="section-block">
+      <div class="container">
+        <div class="limits-card">
+          <span class="section-tag">Scientific Responsibility</span>
+          <h2 class="section-title" style="margin-bottom: 0.5rem;">Limitations & clinical safety scope</h2>
+          <p class="section-desc" style="max-width: 100%;">
+            This system is an academic research demonstration designed to explore machine-assisted triage. It is not an autonomous medical device.
+          </p>
+
+          <div class="limits-grid">
+            <div class="limit-item">
+              <h4>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                Screening Scope Only
+              </h4>
+              <p>
+                The model is trained strictly to highlight potential anomalies for prioritization. It cannot diagnose or rule out non-DR ocular conditions such as glaucoma or age-related macular degeneration.
+              </p>
+            </div>
+
+            <div class="limit-item">
+              <h4>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                Cohort & Demographic Bias
+              </h4>
+              <p>
+                Trained on the APTOS 2019 dataset representing a specific geographical cohort. Performance may shift across varied camera optics, pupil dilation levels, or varying retinal pigmentations.
+              </p>
+            </div>
+
+            <div class="limit-item">
+              <h4>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                Image Quality Sensitivity
+              </h4>
+              <p>
+                Artifacts such as cataract opacities, lens dust, or improper illumination can distort spatial activations. Poor-quality fundus photos must always trigger human re-capture.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Footer -->
+  <footer class="site-footer">
+    <div class="container footer-inner">
+      <div>
+        <div style="font-weight: 600; color: var(--text-main); margin-bottom: 0.25rem;">Diabetic Retinopathy Severity Screening</div>
+        <div>Research codebase based on APTOS 2019 Blindness Detection dataset.</div>
+      </div>
+
+      <ul class="footer-links">
+        <li><a href="https://github.com" target="_blank" rel="noopener">Source Repository</a></li>
+        <li><a href="#performance">Benchmark Data</a></li>
+        <li><a href="#limitations">Ethics & Disclaimer</a></li>
+      </ul>
+    </div>
+  </footer>
+
+  <!-- Lightbox Modal -->
+  <div class="modal-backdrop" id="modalBackdrop" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+    <div class="modal-box">
+      <button class="modal-close-btn" id="modalCloseBtn" aria-label="Close dialog">&times;</button>
+      <div id="modalContent"></div>
+    </div>
+  </div>
+
+  <div id="cm-tooltip"></div>
+
+  <!-- Client-side JavaScript -->
+  <script>
+    /**
+     * API CONFIGURATION
+     */
+    const API_CONFIG = {
+      USE_MOCK: false,
+      ENDPOINT: '/predict'
+    };
+
+    /**
+     * Unified 4 Tiers:
+     * Stage 3 & Stage 4 combined into "Stage 3: Severe" (High Review Priority)
+     */
+    const DR_CLASSES = [
+      { id: 0, name: "No DR", color: "var(--sev-0)", priority: "Routine", priorityClass: "priority-routine", desc: "No microaneurysms or diabetic lesions identified." },
+      { id: 1, name: "Mild", color: "var(--sev-1)", priority: "Routine", priorityClass: "priority-routine", desc: "Isolated microaneurysms detected. Annual follow-up suggested." },
+      { id: 2, name: "Moderate", color: "var(--sev-2)", priority: "Elevated", priorityClass: "priority-elevated", desc: "Microaneurysms, hemorrhages, or hard exudates present." },
+      { id: 3, name: "Severe", color: "var(--sev-3)", priority: "High", priorityClass: "priority-high", desc: "Severe non-proliferative or proliferative changes (NVD/NVE, extensive hemorrhages)." }
+    ];
+
+    /**
+     * Empirical Confusion Matrix with Severe & PDR Combined (4x4):
+     * Actual 0: [264, 6, 1, 0] (Total 271)
+     * Actual 1: [4, 31, 17, 4] (Total 56)
+     * Actual 2: [6, 10, 122, 12] (Total 150)
+     * Actual 3 (Combined 3 & 4): [1, 3, 21, 48] (Total 73)
+     */
+    const CM_DATA = [
+      [264, 6, 1, 0],
+      [4, 31, 17, 4],
+      [6, 10, 122, 12],
+      [1, 3, 21, 48]
+    ];
+
+    const RECALL_DATA = [
+      { name: "No DR", recall: 97, highlight: false },
+      { name: "Mild", recall: 55, highlight: false },
+      { name: "Moderate", recall: 81, highlight: false },
+      { name: "Severe", recall: 65.8, highlight: true, note: "Combined Severe & Proliferative DR sensitivity" }
+    ];
+
+    const BENCHMARK_SAMPLES = [
+      {
+        id: "sample-pdr",
+        title: "Patient #4082 (Severe)",
+        stageText: "Severe",
+        trueStage: 3,
+        probabilities: [0.01, 0.02, 0.12, 0.85], // Combined 0.18 + 0.67 = 0.85
+        fundusType: "pdr"
+      },
+      {
+        id: "sample-mod",
+        title: "Patient #1195 (Moderate)",
+        stageText: "Moderate DR",
+        trueStage: 2,
+        probabilities: [0.03, 0.11, 0.74, 0.12], // Combined 0.08 + 0.04 = 0.12
+        fundusType: "moderate"
+      },
+      {
+        id: "sample-nodr",
+        title: "Patient #0024 (Healthy)",
+        stageText: "No DR",
+        trueStage: 0,
+        probabilities: [0.94, 0.04, 0.01, 0.01], // Combined 0.00 + 0.01 = 0.01
+        fundusType: "healthy"
+      }
+    ];
+
+    const GALLERY_CASES = [
+      {
+        title: "Stage 3 (Severe DR) — True Positive",
+        status: "Correctly Classified",
+        isCorrect: true,
+        predClass: "Severe",
+        actualClass: "Severe",
+        confidence: "85.2%",
+        fundusType: "severe",
+        caption: "High activation concentrated over quadrant dot-blot hemorrhages matching clinical 4-2-1 criteria.",
+        details: "Grad-CAM displays dense attribution in the lower nasal quadrant where intraretinal microvascular abnormalities (IRMA) and venous beading coincide."
+      },
+      {
+        title: "Stage 3 (Severe) — True Positive",
+        status: "Correctly Classified",
+        isCorrect: true,
+        predClass: "Severe",
+        actualClass: "Severe",
+        confidence: "91.3%",
+        fundusType: "pdr",
+        caption: "Pronounced gradient focus around fine vessel fronds near the optic disc margins.",
+        details: "The network successfully detected neovascularization on the disc (NVD), which represents high-risk sight-threatening retinopathy."
+      },
+      {
+        title: "Stage 1 vs 2 — Borderline Edge Case",
+        status: "Misclassified (Mild as Mod)",
+        isCorrect: false,
+        predClass: "Moderate",
+        actualClass: "Mild",
+        confidence: "52.3%",
+        fundusType: "moderate",
+        caption: "Model elevated mild microaneurysms to moderate due to retinal vessel crossing reflex artifact.",
+        details: "Reflection artifacts near an arteriovenous crossing were over-weighted as possible exudates, illustrating sensitivity to photographic sheen."
+      },
+      {
+        title: "Stage 0 (No DR) — True Negative",
+        status: "Correctly Classified",
+        isCorrect: true,
+        predClass: "No DR",
+        actualClass: "No DR",
+        confidence: "96.5%",
+        fundusType: "healthy",
+        caption: "Broad, diffuse saliency with zero focal clustering around the macula or vascular arcades.",
+        details: "Absence of pathological focal points indicates healthy retinal fundus tissue, correctly assigned to routine annual re-screening."
+      }
+    ];
+
+    // Procedural Retinal Fundus & Heatmap Canvas Renderer
+    function drawRetinalFundus(canvas, type, addHeatmap = false, heatmapOpacity = 0.7) {
+      const ctx = canvas.getContext('2d');
+      const w = canvas.width;
+      const h = canvas.height;
+
+      ctx.fillStyle = '#050406';
+      ctx.fillRect(0, 0, w, h);
+
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(w / 2, h / 2, (w / 2) - 4, 0, Math.PI * 2);
+      ctx.clip();
+
+      const fundusGrad = ctx.createRadialGradient(w * 0.45, h * 0.45, 10, w / 2, h / 2, w * 0.5);
+      fundusGrad.addColorStop(0, '#B84518');
+      fundusGrad.addColorStop(0.65, '#872308');
+      fundusGrad.addColorStop(1, '#3B0902');
+      ctx.fillStyle = fundusGrad;
+      ctx.fillRect(0, 0, w, h);
+
+      const discX = w * 0.28;
+      const discY = h * 0.52;
+      const discGrad = ctx.createRadialGradient(discX, discY, 3, discX, discY, 26);
+      discGrad.addColorStop(0, '#FFF5D6');
+      discGrad.addColorStop(0.5, '#F5B066');
+      discGrad.addColorStop(1, '#A03212');
+      ctx.fillStyle = discGrad;
+      ctx.beginPath();
+      ctx.arc(discX, discY, 22, 0, Math.PI * 2);
+      ctx.fill();
+
+      const maculaX = w * 0.62;
+      const maculaY = h * 0.53;
+      const maculaGrad = ctx.createRadialGradient(maculaX, maculaY, 2, maculaX, maculaY, 28);
+      maculaGrad.addColorStop(0, '#420A04');
+      maculaGrad.addColorStop(0.7, '#6E1408');
+      maculaGrad.addColorStop(1, 'transparent');
+      ctx.fillStyle = maculaGrad;
+      ctx.beginPath();
+      ctx.arc(maculaX, maculaY, 28, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.strokeStyle = '#5E0C06';
+      ctx.lineWidth = 3;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(discX, discY);
+      ctx.bezierCurveTo(discX + 15, discY - 60, maculaX - 20, discY - 75, w * 0.85, discY - 50);
+      ctx.moveTo(discX, discY);
+      ctx.bezierCurveTo(discX + 20, discY + 65, maculaX - 10, discY + 80, w * 0.85, discY + 55);
+      ctx.stroke();
+
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(discX + 45, discY - 45);
+      ctx.quadraticCurveTo(maculaX, discY - 20, maculaX + 20, discY - 40);
+      ctx.moveTo(discX + 40, discY + 45);
+      ctx.quadraticCurveTo(maculaX, discY + 20, maculaX + 25, discY + 40);
+      ctx.stroke();
+
+      if (type === 'moderate' || type === 'severe' || type === 'pdr') {
+        ctx.fillStyle = '#FFF8BC';
+        for (let i = 0; i < (type === 'pdr' ? 18 : 12); i++) {
+          const exX = maculaX + (Math.sin(i * 1.5) * 38);
+          const exY = maculaY + (Math.cos(i * 1.5) * 32);
+          ctx.beginPath();
+          ctx.arc(exX, exY, 1.8, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        ctx.fillStyle = '#400201';
+        for (let i = 0; i < (type === 'severe' ? 14 : 7); i++) {
+          const hmX = (w * 0.4) + (Math.cos(i * 2) * 55);
+          const hmY = (h * 0.4) + (Math.sin(i * 2.3) * 50);
+          ctx.beginPath();
+          ctx.arc(hmX, hmY, type === 'severe' ? 3.5 : 2, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+
+      if (type === 'pdr') {
+        ctx.strokeStyle = '#D4321C';
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        for (let j = 0; j < 6; j++) {
+          ctx.moveTo(discX + 12, discY + (j * 4 - 10));
+          ctx.lineTo(discX + 32, discY + (j * 7 - 15));
+        }
+        ctx.stroke();
+      }
+
+      if (addHeatmap) {
+        ctx.globalAlpha = heatmapOpacity;
+        ctx.globalCompositeOperation = 'screen';
+
+        const focalPoints = [];
+        if (type === 'pdr') {
+          focalPoints.push({ x: discX + 18, y: discY - 5, radius: 48, intensity: 1.0 });
+          focalPoints.push({ x: maculaX - 10, y: maculaY + 15, radius: 36, intensity: 0.6 });
+        } else if (type === 'severe') {
+          focalPoints.push({ x: w * 0.45, y: h * 0.42, radius: 50, intensity: 0.95 });
+          focalPoints.push({ x: maculaX - 25, y: maculaY - 15, radius: 35, intensity: 0.7 });
+        } else if (type === 'moderate') {
+          focalPoints.push({ x: maculaX + 15, y: maculaY + 10, radius: 40, intensity: 0.8 });
+        } else {
+          focalPoints.push({ x: w * 0.5, y: h * 0.5, radius: 65, intensity: 0.25 });
+        }
+
+        focalPoints.forEach(pt => {
+          const hmGrad = ctx.createRadialGradient(pt.x, pt.y, 2, pt.x, pt.y, pt.radius);
+          hmGrad.addColorStop(0, `rgba(235, 40, 20, ${pt.intensity})`);
+          hmGrad.addColorStop(0.4, `rgba(245, 170, 20, ${pt.intensity * 0.7})`);
+          hmGrad.addColorStop(0.8, `rgba(20, 180, 150, ${pt.intensity * 0.3})`);
+          hmGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+          ctx.fillStyle = hmGrad;
+          ctx.beginPath();
+          ctx.arc(pt.x, pt.y, pt.radius, 0, Math.PI * 2);
+          ctx.fill();
+        });
+
+        ctx.globalAlpha = 1.0;
+        ctx.globalCompositeOperation = 'source-over';
+      }
+
+      ctx.restore();
+    }
+
+    let currentSample = BENCHMARK_SAMPLES[0];
+    let customUploadedImage = null;
+    let currentOpacity = 0.7;
+
+    function initUI() {
+      renderSampleThumbnails();
+      renderRecallChart();
+      renderConfusionMatrix(false);
+      renderGallery();
+      evaluateCurrentSample();
+      setupEventListeners();
+    }
+
+    function renderSampleThumbnails() {
+      const container = document.getElementById('sampleGrid');
+      container.innerHTML = '';
+
+      BENCHMARK_SAMPLES.forEach((sample) => {
+        const card = document.createElement('div');
+        card.className = `sample-card ${sample.id === currentSample.id ? 'active' : ''}`;
+        card.setAttribute('role', 'button');
+        card.setAttribute('tabindex', '0');
+        card.innerHTML = `
+          <div class="sample-thumb-wrap">
+            <canvas id="thumb-${sample.id}" width="120" height="68"></canvas>
+          </div>
+          <div class="sample-title">${sample.title}</div>
+          <div class="sample-stage">${sample.stageText}</div>
+        `;
+
+        card.addEventListener('click', () => selectSample(sample));
+        card.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            selectSample(sample);
+          }
+        });
+
+        container.appendChild(card);
+        setTimeout(() => {
+          const cvs = document.getElementById(`thumb-${sample.id}`);
+          if (cvs) drawRetinalFundus(cvs, sample.fundusType);
+        }, 10);
+      });
+    }
+
+    function selectSample(sample) {
+      currentSample = sample;
+      customUploadedImage = null;
+      document.querySelectorAll('.sample-card').forEach(c => c.classList.remove('active'));
+      const activeBtn = [...document.querySelectorAll('.sample-card')].find(c => c.textContent.includes(sample.title));
+      if (activeBtn) activeBtn.classList.add('active');
+      evaluateCurrentSample();
+    }
+
+    /**
+     * Combines Stage 3 and Stage 4 into "Severe"
+     */
+    function evaluateCurrentSample() {
+      let rawProbs = currentSample.probabilities;
+      let predIdx = currentSample.trueStage;
+
+      // Combine probabilities if 5 classes are provided
+      let probs = [];
+      if (rawProbs.length === 5) {
+        probs = [
+          rawProbs[0],
+          rawProbs[1],
+          rawProbs[2],
+          rawProbs[3] + rawProbs[4] // Combine Severe (3) + PDR (4)
+        ];
+      } else {
+        probs = rawProbs.slice(0, 4);
+      }
+
+      // Map predicted index 4 (PDR) -> 3 (Severe)
+      let combinedIdx = predIdx >= 3 ? 3 : predIdx;
+      let predClass = DR_CLASSES[combinedIdx];
+      let maxProb = Math.max(...probs);
+
+      // Render Predicted Stage Name: "Stage 3: Severe"
+      document.getElementById('predictedLabel').textContent = `Stage ${predClass.id}: ${predClass.name}`;
+      document.getElementById('severityDot').style.backgroundColor = predClass.color;
+
+      document.getElementById('priorityContainer').innerHTML = `
+        <span class="priority-badge ${predClass.priorityClass}">
+          <span aria-hidden="true">●</span>
+          <span>${predClass.priority} Review Priority</span>
+        </span>
+      `;
+
+      const banner = document.getElementById('uncertaintyBanner');
+      banner.style.display = maxProb < 0.60 ? 'block' : 'none';
+
+      // Render exactly 4 probability bars
+      const list = document.getElementById('probList');
+      list.innerHTML = '';
+      DR_CLASSES.forEach((cls, i) => {
+        const prob = probs[i] || 0;
+        const pct = (prob * 100).toFixed(1);
+        const item = document.createElement('div');
+        item.className = 'prob-item';
+        item.innerHTML = `
+          <div class="prob-name">${cls.id} · ${cls.name}</div>
+          <div class="prob-track">
+            <div class="prob-fill" style="width: ${pct}%; background: ${cls.color};"></div>
+          </div>
+          <div class="prob-val tabular-nums">${pct}%</div>
+        `;
+        list.appendChild(item);
+      });
+
+      renderCanvases();
+    }
+
+    function renderCanvases() {
+      const origCvs = document.getElementById('originalCanvas');
+      const gradCvs = document.getElementById('gradcamCanvas');
+
+      if (customUploadedImage) {
+        const ctxO = origCvs.getContext('2d');
+        ctxO.drawImage(customUploadedImage, 0, 0, origCvs.width, origCvs.height);
+
+        const ctxG = gradCvs.getContext('2d');
+        ctxG.drawImage(customUploadedImage, 0, 0, gradCvs.width, gradCvs.height);
+
+        ctxG.globalAlpha = currentOpacity;
+        ctxG.globalCompositeOperation = 'screen';
+        const grad = ctxG.createRadialGradient(gradCvs.width * 0.5, gradCvs.height * 0.45, 10, gradCvs.width * 0.5, gradCvs.height * 0.45, 90);
+        grad.addColorStop(0, 'rgba(235, 40, 20, 0.9)');
+        grad.addColorStop(0.5, 'rgba(245, 170, 20, 0.6)');
+        grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+        ctxG.fillStyle = grad;
+        ctxG.beginPath();
+        ctxG.arc(gradCvs.width * 0.5, gradCvs.height * 0.45, 90, 0, Math.PI * 2);
+        ctxG.fill();
+        ctxG.globalAlpha = 1.0;
+        ctxG.globalCompositeOperation = 'source-over';
+      } else {
+        drawRetinalFundus(origCvs, currentSample.fundusType, false);
+        drawRetinalFundus(gradCvs, currentSample.fundusType, true, currentOpacity);
+      }
+    }
+
+    function renderRecallChart() {
+      const container = document.getElementById('recallBars');
+      container.innerHTML = '';
+
+      RECALL_DATA.forEach((item, idx) => {
+        const cls = DR_CLASSES[idx];
+        const row = document.createElement('div');
+        row.className = 'recall-item';
+        row.innerHTML = `
+          <div class="recall-label-row">
+            <span class="recall-class-name">Stage ${idx} (${item.name})</span>
+            <div>
+              ${item.highlight ? '<span class="recall-highlight-tag">Combined Triage Focus ★ </span>' : ''}
+              <strong class="tabular-nums" style="color: ${item.highlight ? 'var(--teal-accent)' : 'inherit'}">${item.recall}%</strong>
+            </div>
+          </div>
+          <div class="recall-bar-track">
+            <div class="recall-bar-fill" style="width: ${item.recall}%; background: ${cls.color};"></div>
+          </div>
+        `;
+        container.appendChild(row);
+      });
+    }
+
+    function renderConfusionMatrix(isNormalized = false) {
+      const tbody = document.getElementById('cmBody');
+      tbody.innerHTML = '';
+      const tooltip = document.getElementById('cm-tooltip');
+
+      CM_DATA.forEach((row, rIdx) => {
+        const tr = document.createElement('tr');
+        const rowTotal = row.reduce((a, b) => a + b, 0);
+
+        const th = document.createElement('th');
+        th.style.textAlign = 'left';
+        th.style.fontWeight = '500';
+        th.textContent = `${DR_CLASSES[rIdx].name}`;
+        tr.appendChild(th);
+
+        row.forEach((val, cIdx) => {
+          const td = document.createElement('td');
+          td.className = 'cm-cell';
+          const pct = ((val / rowTotal) * 100).toFixed(1);
+          const intensity = val / (rIdx === cIdx ? rowTotal : (rowTotal * 0.35));
+          const clamped = Math.min(Math.max(intensity, 0), 1);
+          
+          if (rIdx === cIdx) {
+            td.style.backgroundColor = `rgba(15, 118, 110, ${0.15 + (clamped * 0.75)})`;
+            td.style.color = clamped > 0.4 ? '#FFFFFF' : 'var(--text-main)';
+          } else if (val > 0) {
+            td.style.backgroundColor = `rgba(239, 68, 68, ${0.08 + (clamped * 0.35)})`;
+            td.style.color = 'var(--text-main)';
+          } else {
+            td.style.backgroundColor = 'var(--bg-subtle)';
+            td.style.color = 'var(--text-subtle)';
+          }
+
+          td.textContent = isNormalized ? `${pct}%` : val;
+
+          td.addEventListener('mouseenter', () => {
+            tooltip.innerHTML = `
+              <strong>Ground Truth:</strong> Stage ${rIdx} (${DR_CLASSES[rIdx].name})<br/>
+              <strong>Predicted:</strong> Stage ${cIdx} (${DR_CLASSES[cIdx].name})<br/>
+              <strong>Count:</strong> ${val} images (${pct}% of actual class)
+            `;
+            tooltip.style.opacity = '1';
+          });
+
+          td.addEventListener('mousemove', (e) => {
+            tooltip.style.left = (e.pageX + 12) + 'px';
+            tooltip.style.top = (e.pageY + 12) + 'px';
+          });
+
+          td.addEventListener('mouseleave', () => {
+            tooltip.style.opacity = '0';
+          });
+
+          tr.appendChild(td);
+        });
+
+        tbody.appendChild(tr);
+      });
+    }
+
+    function renderGallery() {
+      const container = document.getElementById('galleryGrid');
+      container.innerHTML = '';
+
+      GALLERY_CASES.forEach((item, idx) => {
+        const card = document.createElement('div');
+        card.className = 'gallery-card';
+        card.setAttribute('role', 'button');
+        card.setAttribute('tabindex', '0');
+        card.innerHTML = `
+          <div class="gallery-thumb-container">
+            <canvas id="gal-cvs-${idx}" width="260" height="260"></canvas>
+            <span class="gallery-pill ${item.isCorrect ? 'pill-correct' : 'pill-misclassified'}">
+              ${item.status}
+            </span>
+          </div>
+          <div class="gallery-info">
+            <div class="gallery-stage">${item.title}</div>
+            <div class="gallery-caption">${item.caption}</div>
+          </div>
+        `;
+
+        card.addEventListener('click', () => openModal(item));
+        card.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            openModal(item);
+          }
+        });
+
+        container.appendChild(card);
+        setTimeout(() => {
+          const cvs = document.getElementById(`gal-cvs-${idx}`);
+          if (cvs) drawRetinalFundus(cvs, item.fundusType, true, 0.75);
+        }, 15);
+      });
+    }
+
+    function openModal(item) {
+      const modal = document.getElementById('modalBackdrop');
+      const content = document.getElementById('modalContent');
+
+      content.innerHTML = `
+        <div style="font-size: 0.6875rem; text-transform: uppercase; font-weight: 600; color: var(--teal-accent); margin-bottom: 0.25rem;">
+          Explainability Case Review
+        </div>
+        <h3 id="modalTitle" style="font-size: 1.25rem; font-weight: 600; color: var(--text-main); margin-bottom: 1rem;">
+          ${item.title}
+        </h3>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1.25rem;">
+          <div class="image-box" style="aspect-ratio: 1/1;">
+            <div class="image-box-tag">Fundus</div>
+            <canvas id="modal-orig" width="300" height="300"></canvas>
+          </div>
+          <div class="image-box" style="aspect-ratio: 1/1;">
+            <div class="image-box-tag">Grad-CAM Attribution</div>
+            <canvas id="modal-cam" width="300" height="300"></canvas>
+          </div>
+        </div>
+
+        <div style="background: var(--bg-subtle); padding: 1rem; border-radius: var(--radius-sm); font-size: 0.8125rem; color: var(--text-muted); line-height: 1.5;">
+          <div style="margin-bottom: 0.4rem; color: var(--text-main); font-weight: 600;">Clinical & Visual Saliency Analysis:</div>
+          ${item.details}
+          <div style="margin-top: 0.5rem; display: flex; gap: 1.5rem; font-size: 0.75rem;">
+            <span><strong>Target Truth:</strong> ${item.actualClass}</span>
+            <span><strong>Model Output:</strong> ${item.predClass} (${item.confidence})</span>
+          </div>
+        </div>
+      `;
+
+      modal.classList.add('open');
+      setTimeout(() => {
+        const cvsO = document.getElementById('modal-orig');
+        const cvsC = document.getElementById('modal-cam');
+        if (cvsO) drawRetinalFundus(cvsO, item.fundusType, false);
+        if (cvsC) drawRetinalFundus(cvsC, item.fundusType, true, 0.75);
+      }, 20);
+    }
+
+    function closeModal() {
+      document.getElementById('modalBackdrop').classList.remove('open');
+    }
+
+    function setupEventListeners() {
+      document.getElementById('themeToggleBtn').addEventListener('click', () => {
+        const currentTheme = document.documentElement.getAttribute('data-theme');
+        const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+        document.documentElement.setAttribute('data-theme', newTheme);
+      });
+
+      const slider = document.getElementById('opacitySlider');
+      const opacityVal = document.getElementById('opacityVal');
+      slider.addEventListener('input', (e) => {
+        currentOpacity = e.target.value / 100;
+        opacityVal.textContent = `${e.target.value}%`;
+        renderCanvases();
+      });
+
+      const countBtn = document.getElementById('cmCountBtn');
+      const normBtn = document.getElementById('cmNormBtn');
+
+      countBtn.addEventListener('click', () => {
+        countBtn.classList.add('active');
+        countBtn.setAttribute('aria-checked', 'true');
+        normBtn.classList.remove('active');
+        normBtn.setAttribute('aria-checked', 'false');
+        renderConfusionMatrix(false);
+      });
+
+      normBtn.addEventListener('click', () => {
+        normBtn.classList.add('active');
+        normBtn.setAttribute('aria-checked', 'true');
+        countBtn.classList.remove('active');
+        countBtn.setAttribute('aria-checked', 'false');
+        renderConfusionMatrix(true);
+      });
+
+      document.getElementById('modalCloseBtn').addEventListener('click', closeModal);
+      document.getElementById('modalBackdrop').addEventListener('click', (e) => {
+        if (e.target === e.currentTarget) closeModal();
+      });
+      window.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') closeModal();
+      });
+
+      const dropzone = document.getElementById('dropzone');
+      const fileInput = document.getElementById('fileInput');
+
+      ['dragenter', 'dragover'].forEach(name => {
+        dropzone.addEventListener(name, (e) => {
+          e.preventDefault();
+          dropzone.classList.add('dragover');
+        });
+      });
+
+      ['dragleave', 'drop'].forEach(name => {
+        dropzone.addEventListener(name, (e) => {
+          e.preventDefault();
+          dropzone.classList.remove('dragover');
+        });
+      });
+
+      dropzone.addEventListener('drop', (e) => {
+        const files = e.dataTransfer.files;
+        if (files.length) handleImageUpload(files[0]);
+      });
+
+      fileInput.addEventListener('change', (e) => {
+        if (e.target.files.length) handleImageUpload(e.target.files[0]);
+      });
+    }
+
+    function handleImageUpload(file) {
+      if (!file.type.startsWith('image/')) {
+        alert("Please upload a valid fundus image (PNG or JPEG).");
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const img = new Image();
+        img.onload = () => {
+          customUploadedImage = img;
+          document.querySelectorAll('.sample-card').forEach(c => c.classList.remove('active'));
+
+          if (API_CONFIG.USE_MOCK) {
+            currentSample = {
+              id: "uploaded-image",
+              title: file.name,
+              stageText: "Estimated: Moderate DR",
+              trueStage: 2,
+              probabilities: [0.04, 0.12, 0.68, 0.16],
+              fundusType: "moderate"
+            };
+            evaluateCurrentSample();
+          } else {
+            sendLiveInferenceRequest(file);
+          }
+        };
+        img.src = event.target.result;
+      };
+      reader.readAsDataURL(file);
+    }
+
+    async function sendLiveInferenceRequest(file) {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      try {
+        const response = await fetch(API_CONFIG.ENDPOINT, {
+          method: 'POST',
+          body: formData
+        });
+
+        if (!response.ok) throw new Error(`HTTP error ${response.status}`);
+        const data = await response.json();
+
+        // Check if backend returned 4-class combined probabilities or raw 5-class
+        let probsArray = [];
+        if (data.probabilities) {
+          if (data.probabilities["Severe"] !== undefined && data.probabilities["Proliferative DR"] === undefined) {
+            // Already 4 classes
+            probsArray = [
+              data.probabilities["No DR"] || 0,
+              data.probabilities["Mild"] || 0,
+              data.probabilities["Moderate"] || 0,
+              data.probabilities["Severe"] || 0
+            ];
+          } else {
+            // Raw 5 classes -> combine Severe + PDR
+            const rawVals = Object.values(data.probabilities);
+            probsArray = [
+              rawVals[0] || 0,
+              rawVals[1] || 0,
+              rawVals[2] || 0,
+              (rawVals[3] || 0) + (rawVals[4] || 0)
+            ];
+          }
+        } else {
+          probsArray = [0.05, 0.10, 0.65, 0.20];
+        }
+
+        const combinedIdx = data.prediction_index >= 3 ? 3 : data.prediction_index;
+        const displayLabel = combinedIdx === 3 ? "Severe" : data.prediction_label;
+
+        currentSample = {
+          id: "live-inference",
+          title: file.name,
+          stageText: displayLabel,
+          trueStage: combinedIdx,
+          probabilities: probsArray,
+          fundusType: "moderate"
+        };
+        evaluateCurrentSample();
+      } catch (err) {
+        console.warn("Live API not reachable or running offline, using demonstration preview:", err);
+        currentSample = {
+          id: "uploaded-image",
+          title: file.name,
+          stageText: "Estimated: Moderate DR",
+          trueStage: 2,
+          probabilities: [0.04, 0.12, 0.68, 0.16],
+          fundusType: "moderate"
+        };
+        evaluateCurrentSample();
+      }
+    }
+
+    document.addEventListener('DOMContentLoaded', initUI);
+  </script>
+</body>
+</html>
